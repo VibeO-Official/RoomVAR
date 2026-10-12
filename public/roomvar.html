@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>roomvar — AI interior design</title>
+<meta name="description" content="Chat with an AI interior designer and generate photorealistic room visuals.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+
+<!-- ============================================================
+     1. CONFIGURATION
+     BACKEND_URL: where the RoomVAR API lives (/api/public/chat and
+     /api/public/image). When this file is served from the RoomVAR
+     app itself, the same origin is used automatically.
+     SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY are PUBLIC values
+     (safe in the browser). No private keys belong in this file.
+     ============================================================ -->
+<script>
+window.ROOMVAR_CONFIG = {
+  BACKEND_URL: "https://project--a9af5e09-3c07-4f63-847d-f5cb87503c03.lovable.app",
+  SUPABASE_URL: "https://zzmkzulfkvjuqhkuslab.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_TBpUCmlPGSXDKjU0B8Rb1w_fQmuUdaF",
+};
+</script>
+
+<!-- ============================================================
+     2. STYLES
+     ============================================================ -->
+<style>
+:root{
+  --bg:#0b0c0b; --panel:#121412; --panel-2:#181b18; --line:#232723; --line-2:#2e332e;
+  --text:#ecefe9; --muted:#8d958b; --dim:#5d655b;
+  --accent:#10a37f; --accent-2:#5fd4a8; --sage:#a9c4a0; --danger:#e5675b;
+  --radius:16px; --serif:'Fraunces',Georgia,serif; --sans:'Manrope',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,textarea{font:inherit;color:inherit}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#262a26;border-radius:3px}
+.hidden{display:none!important}
+.logo{width:30px;height:30px;flex:none}
+.brand{font-family:var(--serif);font-size:20px;letter-spacing:-.01em}
+.brand b{color:var(--accent-2);font-weight:600}
+
+/* ---------- Auth ---------- */
+#auth{position:fixed;inset:0;display:grid;place-items:center;padding:24px;
+  background:radial-gradient(ellipse 60% 50% at 50% 40%,rgba(16,163,127,.18),transparent 70%),var(--bg)}
+.auth-card{width:100%;max-width:400px;background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:32px}
+.auth-card h1{font-family:var(--serif);font-weight:500;font-size:30px;margin:18px 0 6px;letter-spacing:-.02em}
+.auth-card p.sub{color:var(--muted);margin-bottom:22px;line-height:1.5}
+.field{width:100%;background:var(--panel-2);border:1px solid var(--line-2);border-radius:12px;padding:12px 14px;margin-bottom:10px;outline:none}
+.field:focus{border-color:var(--accent)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:12px;padding:12px 16px;font-weight:600;transition:.15s}
+.btn-primary{background:var(--accent);color:#04140f;width:100%}
+.btn-primary:hover{background:var(--accent-2)}
+.btn-primary:disabled{opacity:.5;cursor:default}
+.link{color:var(--accent-2);font-weight:600}
+.note{font-size:13px;margin-top:12px;line-height:1.5;color:var(--muted)}
+.note.err{color:var(--danger)} .note.ok{color:var(--accent-2)}
+
+/* ---------- Layout ---------- */
+#app{display:flex;height:100%}
+#sidebar{width:272px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;transition:transform .25s}
+.sb-head{display:flex;align-items:center;gap:10px;padding:16px 16px 10px}
+.sb-nav{padding:6px 10px;display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px;color:#cfd5cc;font-weight:500;text-align:left;width:100%}
+.nav-item:hover{background:var(--panel-2)}
+.nav-item.active{background:var(--panel-2);color:var(--text)}
+.nav-item svg{width:17px;height:17px;flex:none;color:var(--muted)}
+.sb-search{margin:4px 10px 6px;position:relative}
+.sb-search input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px 8px 32px;font-size:13px;outline:none}
+.sb-search svg{position:absolute;left:10px;top:9px;width:14px;height:14px;color:var(--dim)}
+#threads{flex:1;overflow-y:auto;padding:4px 10px 10px}
+.group-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);padding:14px 10px 6px;font-weight:600}
+.thread{display:flex;align-items:center;border-radius:9px;position:relative}
+.thread:hover,.thread.active{background:var(--panel-2)}
+.thread .t-open{flex:1;min-width:0;text-align:left;padding:8px 10px;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c7cdc4}
+.thread.active .t-open{color:var(--text)}
+.thread .t-act{opacity:0;padding:6px;color:var(--dim);border-radius:6px}
+.thread:hover .t-act,.thread.active .t-act{opacity:1}
+.thread .t-act:hover{color:var(--text)}
+.thread input{flex:1;background:var(--bg);border:1px solid var(--accent);border-radius:7px;padding:6px 8px;font-size:13px;outline:none;margin:2px}
+.sb-foot{border-top:1px solid var(--line);padding:10px}
+.user-row{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px}
+.avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--sage));color:#04140f;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+.user-row .em{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon-btn{padding:7px;border-radius:9px;color:var(--muted)}
+.icon-btn:hover{background:var(--panel-2);color:var(--text)}
+.icon-btn svg{width:18px;height:18px;display:block}
+
+#main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;min-height:52px}
+.topbar .title{font-weight:600;color:#cfd5cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#menuBtn{display:none}
+#scrim{display:none}
+
+/* ---------- Chat ---------- */
+#scroll{flex:1;overflow-y:auto}
+.wrap{max-width:780px;margin:0 auto;padding:0 20px}
+#welcome{padding-top:9vh;text-align:center}
+#welcome h2{font-family:var(--serif);font-weight:500;font-size:clamp(30px,4.5vw,44px);letter-spacing:-.025em;line-height:1.1}
+#welcome h2 em{font-style:italic;color:var(--accent-2)}
+#welcome p{color:var(--muted);margin:14px auto 34px;max-width:480px;line-height:1.55}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:left}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;font-size:13.5px;line-height:1.45;color:#cfd5cc;transition:.15s}
+.card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.card .k{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-2);margin-bottom:6px}
+#messages{padding:18px 0 30px;display:flex;flex-direction:column;gap:26px}
+.msg-user{align-self:flex-end;max-width:80%;background:var(--panel-2);border:1px solid var(--line-2);padding:11px 15px;border-radius:18px 18px 4px 18px;white-space:pre-wrap;line-height:1.55}
+.msg-user img{display:block;max-width:240px;border-radius:10px;margin-bottom:8px}
+.msg-ai{display:flex;gap:14px}
+.msg-ai .logo{margin-top:2px}
+.msg-ai .body{flex:1;min-width:0;line-height:1.65}
+.msg-ai .body img.gen{width:100%;border-radius:14px;border:1px solid var(--line);display:block}
+.md h1,.md h2,.md h3{font-family:var(--serif);font-weight:500;margin:18px 0 8px;line-height:1.25}
+.md h1{font-size:22px}.md h2{font-size:19px}.md h3{font-size:16.5px}
+.md p{margin:8px 0}.md ul,.md ol{margin:8px 0 8px 22px}.md li{margin:4px 0}
+.md strong{color:#fff}.md code{background:var(--panel-2);padding:2px 6px;border-radius:5px;font-size:13px}
+.md a{color:var(--accent-2)}
+.err-box{background:rgba(229,103,91,.08);border:1px solid rgba(229,103,91,.3);color:#f2a198;border-radius:12px;padding:10px 14px;font-size:14px}
+.typing{display:flex;gap:5px;padding:10px 0}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:bl 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes bl{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+.thinking .logo{animation:spin 2.2s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes spin{50%{transform:rotate(180deg) scale(1.08);filter:drop-shadow(0 0 10px rgba(16,163,127,.8))}100%{transform:rotate(360deg)}}
+.img-actions{display:flex;gap:8px;margin-top:10px}
+.chip{border:1px solid var(--line-2);border-radius:999px;padding:6px 12px;font-size:12.5px;color:#cfd5cc}
+.chip:hover{border-color:var(--accent);color:var(--text)}
+.img-loading{aspect-ratio:3/2;border-radius:14px;border:1px solid var(--line);background:linear-gradient(110deg,var(--panel) 30%,var(--panel-2) 50%,var(--panel) 70%);background-size:200% 100%;animation:sh 1.6s infinite;display:grid;place-items:center;color:var(--muted);font-size:13px}
+@keyframes sh{to{background-position:-200% 0}}
+
+/* ---------- Composer ---------- */
+.composer-wrap{padding:8px 20px 18px;position:relative}
+.composer{max-width:780px;margin:0 auto;position:relative}
+.glow{position:absolute;inset:-60px -80px;background:radial-gradient(ellipse at center,rgba(16,163,127,.28),transparent 70%);filter:blur(50px);pointer-events:none;opacity:0;transition:opacity .6s}
+.composer.focus .glow{opacity:1}
+.box{position:relative;background:var(--panel);border:1px solid var(--line-2);border-radius:24px;padding:10px 10px 8px 14px;transition:border-color .2s}
+.composer.focus .box{border-color:#2f4a40}
+.box.img-mode{border-color:var(--accent)}
+#preview{display:flex;gap:8px;padding:4px 0 8px}
+#preview .pv{position:relative}
+#preview img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line-2)}
+#preview button{position:absolute;top:-6px;right:-6px;background:#000;border:1px solid var(--line-2);border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1}
+#input{width:100%;background:none;border:0;outline:none;resize:none;max-height:200px;line-height:1.5;padding:6px 2px}
+#input::placeholder{color:var(--dim)}
+.bar{display:flex;align-items:center;gap:4px;margin-top:4px}
+.tool{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;color:var(--muted);font-size:13px;font-weight:500}
+.tool:hover{background:var(--panel-2);color:var(--text)}
+.tool.on{background:rgba(16,163,127,.14);color:var(--accent-2)}
+.tool svg{width:17px;height:17px}
+.spacer{flex:1}
+#send{width:36px;height:36px;border-radius:50%;background:var(--text);color:#000;display:grid;place-items:center}
+#send:disabled{opacity:.3;cursor:default}
+#send svg{width:17px;height:17px}
+#send.stop{background:var(--text)}
+.mic-on{background:var(--accent)!important;color:#04140f!important;animation:pulse 1.5s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(16,163,127,.6)}70%{box-shadow:0 0 0 12px rgba(16,163,127,0)}100%{box-shadow:0 0 0 0 rgba(16,163,127,0)}}
+.foot-note{text-align:center;font-size:11.5px;color:var(--dim);margin-top:10px}
+
+/* ---------- Gallery ---------- */
+#gallery{padding:20px 0 40px}
+#gallery h2{font-family:var(--serif);font-weight:500;font-size:30px;margin-bottom:6px}
+#gallery .sub{color:var(--muted);margin-bottom:22px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.g-item{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.g-item img{width:100%;aspect-ratio:3/2;object-fit:cover;display:block;cursor:zoom-in}
+.g-item .meta{padding:10px 12px;font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:flex-start}
+.g-item .meta span{flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.empty{color:var(--muted);text-align:center;padding:60px 0}
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.88);display:grid;place-items:center;z-index:60;padding:24px;cursor:zoom-out}
+#lightbox img{max-width:100%;max-height:100%;border-radius:12px}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line-2);padding:10px 16px;border-radius:12px;font-size:13.5px;z-index:70}
+
+@media (max-width:860px){
+  #sidebar{position:fixed;inset:0 auto 0 0;z-index:50;transform:translateX(-100%)}
+  body.sb-open #sidebar{transform:none}
+  body.sb-open #scrim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}
+  #menuBtn{display:block}
+  .cards{grid-template-columns:1fr 1fr}
+  .tool .lbl{display:none}
+}
+@media (max-width:520px){.cards{grid-template-columns:1fr}.cards .card:nth-child(n+5){display:none}}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     3. MARKUP
+     ============================================================ -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="logo" viewBox="0 0 32 32">
+      <rect x="1" y="1" width="30" height="30" rx="9" fill="#10a37f"/>
+      <path d="M8 23V13.5L16 8l8 5.5V23" fill="none" stroke="#04140f" stroke-width="2.4" stroke-linejoin="round"/>
+      <path d="M12.5 23v-4.5a3.5 3.5 0 0 1 7 0V23" fill="none" stroke="#04140f" stroke-width="2.4"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div id="auth" class="hidden">
+  <div class="auth-card">
+    <div style="display:flex;align-items:center;gap:10px"><svg class="logo"><use href="#logo"/></svg><span class="brand">room<b>var</b></span></div>
+    <h1 id="authTitle">Welcome back</h1>
+    <p class="sub">Your AI interior designer. Sign in to save your chats and designs.</p>
+    <form id="authForm">
+      <input class="field" id="email" type="email" placeholder="Email" required autocomplete="email">
+      <input class="field" id="password" type="password" placeholder="Password (min 6 characters)" required minlength="6" autocomplete="current-password">
+      <button class="btn btn-primary" id="authBtn" type="submit">Sign in</button>
+    </form>
+    <p class="note" id="authMsg"></p>
+    <p class="note"><span id="switchText">New to roomvar?</span> <button class="link" id="switchMode">Create an account</button></p>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <aside id="sidebar">
+    <div class="sb-head">
+      <svg class="logo"><use href="#logo"/></svg><span class="brand" style="flex:1">room<b>var</b></span>
+    </div>
+    <nav class="sb-nav">
+      <button class="nav-item" id="newChat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>New chat</button>
+      <button class="nav-item" id="navImage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>Image generator</button>
+      <button class="nav-item" id="navRoom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 4l9 6.5V20H3Z"/><path d="M9 20v-6h6v6"/></svg>Design my room</button>
+      <button class="nav-item" id="navGallery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>My gallery</button>
+    </nav>
+    <div class="sb-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" placeholder="Search chats">
+    </div>
+    <div id="threads"></div>
+    <div class="sb-foot">
+      <div class="user-row">
+        <div class="avatar" id="avatar">?</div>
+        <div class="em" id="userEmail"></div>
+        <button class="icon-btn" id="logout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button>
+      </div>
+    </div>
+  </aside>
+  <div id="scrim"></div>
+
+  <main id="main">
+    <div class="topbar">
+      <button class="icon-btn" id="menuBtn" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="title" id="topTitle">roomvar</div>
+    </div>
+
+    <div id="scroll">
+      <div class="wrap">
+        <section id="welcome">
+          <h2>What would you like to <em>design</em> today?</h2>
+          <p>Ask for layout ideas, upload a photo of your room for feedback, or generate a photorealistic visual of your dream space.</p>
+          <div class="cards" id="cards"></div>
+        </section>
+        <section id="messages"></section>
+        <section id="gallery" class="hidden">
+          <h2>My gallery</h2>
+          <p class="sub">Every image you've generated, saved to your account.</p>
+          <div class="grid" id="galleryGrid"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="composer-wrap" id="composerWrap">
+      <div class="composer" id="composer">
+        <div class="glow"></div>
+        <div class="box" id="box">
+          <div id="preview" class="hidden"></div>
+          <textarea id="input" rows="1" placeholder="Describe your room or ask anything…"></textarea>
+          <div class="bar">
+            <button class="tool" id="attach" title="Attach a room photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.4 11-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg><span class="lbl">Room photo</span></button>
+            <button class="tool" id="imgMode" title="Generate an image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span class="lbl">Create image</span></button>
+            <button class="tool" id="mic" title="Voice input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10a7 7 0 0 1-14 0M12 19v3"/></svg></button>
+            <div class="spacer"></div>
+            <button id="send" disabled title="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </div>
+        <input type="file" id="file" accept="image/*" class="hidden">
+        <div class="foot-note">roomvar can make mistakes. Check measurements before you buy.</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="lightbox" class="hidden"><img alt=""></div>
+<div id="toast" class="hidden"></div>
+
+<!-- ============================================================
+     4. APPLICATION LOGIC
+     ============================================================ -->
+<script>
+(() => {
+const CFG = window.ROOMVAR_CONFIG;
+const sameOrigin = /lovable\.app$|lovableproject\.com$|^localhost$|^127\./.test(location.hostname);
+const API = sameOrigin ? location.origin : CFG.BACKEND_URL.replace(/\/$/, "");
+const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_PUBLISHABLE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const md = (s) => DOMPurify.sanitize(marked.parse(s || ""));
+
+const SUGGESTIONS = [
+  ["Redesign", "Redesign my living room in a modern style.", false],
+  ["Generate", "A luxury minimalist bedroom with warm oak, linen bedding and soft evening light.", true],
+  ["Furniture", "Find furniture types that match a Japandi interior with light wood floors.", false],
+  ["Budget", "Help me furnish a small 35 m² apartment on a budget.", false],
+  ["Generate", "A Scandinavian-style home workspace with a large window and plants.", true],
+  ["Analyze", "Analyze my room photo and suggest improvements.", "photo"],
+];
+
+const state = { user: null, threads: [], activeId: null, messages: [], imgMode: false, attachment: null, busy: false, controller: null, view: "chat", authMode: "signin" };
+
+/* ---------- Toast ---------- */
+let toastT;
+function toast(t){ const el=$("toast"); el.textContent=t; el.classList.remove("hidden"); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.add("hidden"),3200); }
+
+/* ---------- Auth ---------- */
+function setAuthMode(m){
+  state.authMode=m;
+  $("authTitle").textContent = m==="signin" ? "Welcome back" : "Create your account";
+  $("authBtn").textContent = m==="signin" ? "Sign in" : "Create account";
+  $("switchText").textContent = m==="signin" ? "New to roomvar?" : "Already have an account?";
+  $("switchMode").textContent = m==="signin" ? "Create an account" : "Sign in";
+  $("password").autocomplete = m==="signin" ? "current-password" : "new-password";
+  $("authMsg").textContent="";
+}
+$("switchMode").onclick = () => setAuthMode(state.authMode==="signin"?"signup":"signin");
+$("authForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const email=$("email").value.trim(), password=$("password").value, msg=$("authMsg");
+  $("authBtn").disabled=true; msg.className="note"; msg.textContent="";
+  try{
+    if(state.authMode==="signin"){
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if(error) throw error;
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password, options:{ emailRedirectTo: location.href.split("#")[0] } });
+      if(error) throw error;
+      if(!data.session){ msg.className="note ok"; msg.textContent="Check your inbox to confirm your email, then sign in."; setAuthMode("signin"); msg.className="note ok"; msg.textContent="Check your inbox to confirm your email, then sign in."; }
+    }
+  }catch(err){ msg.className="note err"; msg.textContent=err.message||"Something went wrong."; }
+  $("authBtn").disabled=false;
+};
+$("logout").onclick = () => sb.auth.signOut();
+
+sb.auth.onAuthStateChange((_e, session) => {
+  const u = session?.user || null;
+  if(u?.id === state.user?.id) return;
+  state.user = u;
+  if(u){ $("auth").classList.add("hidden"); $("app").classList.remove("hidden");
+    $("userEmail").textContent=u.email; $("avatar").textContent=(u.email||"?")[0].toUpperCase();
+    setTimeout(loadThreads,0);
+  } else { $("app").classList.add("hidden"); $("auth").classList.remove("hidden");
+    state.threads=[]; state.activeId=null; state.messages=[]; }
+});
+
+async function token(){ const { data } = await sb.auth.getSession(); return data.session?.access_token; }
+
+/* ---------- Threads ---------- */
+async function loadThreads(){
+  const { data, error } = await sb.from("conversations").select("*").order("updated_at",{ascending:false});
+  if(error){ toast("Couldn't load chats: "+error.message); return; }
+  state.threads=data; renderThreads();
+  const fromHash = location.hash.slice(1);
+  if(fromHash && data.some(t=>t.id===fromHash)) openThread(fromHash); else showWelcome();
+}
+function groupOf(d){
+  const days=(Date.now()-new Date(d))/864e5;
+  return days<1?"Today":days<2?"Yesterday":days<7?"Previous 7 days":days<30?"Previous 30 days":"Older";
+}
+function renderThreads(){
+  const q=$("search").value.toLowerCase(), box=$("threads"); box.innerHTML="";
+  let last=null;
+  const list=state.threads.filter(t=>t.title.toLowerCase().includes(q));
+  if(!list.length){ box.innerHTML=`<div class="group-label" style="text-transform:none;letter-spacing:0">${q?"No matching chats":"No chats yet"}</div>`; return; }
+  for(const t of list){
+    const g=groupOf(t.updated_at);
+    if(g!==last){ box.insertAdjacentHTML("beforeend",`<div class="group-label">${g}</div>`); last=g; }
+    const row=document.createElement("div"); row.className="thread"+(t.id===state.activeId?" active":"");
+    row.innerHTML=`<button class="t-open">${esc(t.title)}</button>
+      <button class="t-act" data-a="rename" title="Rename"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+      <button class="t-act" data-a="delete" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>`;
+    row.querySelector(".t-open").onclick=()=>{ openThread(t.id); closeSidebar(); };
+    row.querySelector('[data-a="rename"]').onclick=()=>renameThread(t,row);
+    row.querySelector('[data-a="delete"]').onclick=()=>deleteThread(t);
+    box.appendChild(row);
+  }
+}
+$("search").oninput=renderThreads;
+function renameThread(t,row){
+  const inp=document.createElement("input"); inp.value=t.title; row.innerHTML=""; row.appendChild(inp); inp.focus(); inp.select();
+  const done=async(save)=>{ const v=inp.value.trim(); if(save&&v&&v!==t.title){
+      const { error } = await sb.from("conversations").update({ title:v }).eq("id",t.id);
+      if(error) toast("Rename failed"); else { t.title=v; if(t.id===state.activeId) $("topTitle").textContent=v; } }
+    renderThreads(); };
+  inp.onkeydown=(e)=>{ if(e.key==="Enter") done(true); if(e.key==="Escape") done(false); };
+  inp.onblur=()=>done(true);
+}
+async function deleteThread(t){
+  if(!confirm(`Delete "${t.title}"?`)) return;
+  const { error } = await sb.from("conversations").delete().eq("id",t.id);
+  if(error){ toast("Delete failed"); return; }
+  state.threads=state.threads.filter(x=>x.id!==t.id);
+  if(state.activeId===t.id) showWelcome(); else renderThreads();
+}
+async function openThread(id){
+  if(state.busy) stop();
+  state.activeId=id; state.view="chat"; history.replaceState(null,"","#"+id);
+  const t=state.threads.find(x=>x.id===id); $("topTitle").textContent=t?.title||"roomvar";
+  showSection("chat"); renderThreads();
+  const { data, error } = await sb.from("messages").select("*").eq("conversation_id",id).order("created_at");
+  if(state.activeId!==id) return;
+  if(error){ toast("Couldn't load messages"); return; }
+  state.messages=data; renderMessages(); $("input").focus();
+}
+function showWelcome(){
+  if(state.busy) stop();
+  state.activeId=null; state.messages=[]; state.view="chat"; history.replaceState(null,"",location.pathname+location.search);
+  $("topTitle").textContent="roomvar"; showSection("chat"); renderMessages(); renderThreads(); $("input").focus();
+}
+function showSection(v){
+  state.view=v;
+  $("gallery").classList.toggle("hidden",v!=="gallery");
+  $("composerWrap").classList.toggle("hidden",v==="gallery");
+  $("messages").classList.toggle("hidden",v!=="chat");
+  $("welcome").classList.toggle("hidden",!(v==="chat"&&!state.activeId&&!state.messages.length));
+  document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
+  if(v==="gallery") $("navGallery").classList.add("active");
+}
+
+/* ---------- Rendering messages ---------- */
+function renderMessages(){
+  const box=$("messages"); box.innerHTML="";
+  $("welcome").classList.toggle("hidden", !!(state.activeId||state.messages.length));
+  for(const m of state.messages) box.appendChild(msgEl(m));
+  scrollDown();
+}
+function msgEl(m){
+  const el=document.createElement("div");
+  if(m.role==="user"){
+    el.className="msg-user";
+    el.innerHTML=(m.image_url?`<img src="${m.image_url}" alt="Attached room photo">`:"")+esc(m.content);
+  } else {
+    el.className="msg-ai";
+    el.innerHTML=`<svg class="logo"><use href="#logo"/></svg><div class="body"></div>`;
+    fillAi(el.querySelector(".body"),m);
+  }
+  return el;
+}
+function fillAi(body,m){
+  if(m.error){ body.innerHTML=`<div class="err-box">${esc(m.error)}</div>`; return; }
+  if(m.image_url){
+    body.innerHTML=`<img class="gen" src="${m.image_url}" alt="${esc(m.content)}"><div class="img-actions">
+      <button class="chip" data-a="dl">Download</button><button class="chip" data-a="redo">Regenerate</button></div>`;
+    body.querySelector("img").onclick=()=>lightbox(m.image_url);
+    body.querySelector('[data-a="dl"]').onclick=()=>download(m.image_url);
+    body.querySelector('[data-a="redo"]').onclick=()=>{ if(!state.busy) generateImage(m.content); };
+    return;
+  }
+  body.innerHTML=`<div class="md">${md(m.content)}</div>`;
+}
+function scrollDown(){ const s=$("scroll"); s.scrollTop=s.scrollHeight; }
+function lightbox(src){ const lb=$("lightbox"); lb.querySelector("img").src=src; lb.classList.remove("hidden"); }
+$("lightbox").onclick=()=>$("lightbox").classList.add("hidden");
+function download(src){ const a=document.createElement("a"); a.href=src; a.download="roomvar-design.jpg"; a.click(); }
+
+/* ---------- Persistence helpers ---------- */
+async function ensureThread(firstText){
+  if(state.activeId) return state.activeId;
+  const title=(firstText||"Room photo").replace(/\s+/g," ").slice(0,60);
+  const { data, error } = await sb.from("conversations").insert({ title }).select().single();
+  if(error) throw new Error("Couldn't create chat: "+error.message);
+  state.threads.unshift(data); state.activeId=data.id; history.replaceState(null,"","#"+data.id);
+  $("topTitle").textContent=data.title; renderThreads();
+  return data.id;
+}
+async function saveMsg(m){
+  const { data, error } = await sb.from("messages").insert({ conversation_id:m.conversation_id, role:m.role, content:m.content, image_url:m.image_url||null }).select().single();
+  if(error){ toast("Couldn't save message: "+error.message); return m; }
+  return data;
+}
+async function touchThread(id){
+  const now=new Date().toISOString();
+  await sb.from("conversations").update({ updated_at:now }).eq("id",id);
+  const t=state.threads.find(x=>x.id===id); if(t){ t.updated_at=now; state.threads.sort((a,b)=>b.updated_at.localeCompare(a.updated_at)); renderThreads(); }
+}
+
+/* ---------- Send ---------- */
+async function send(){
+  if(state.busy){ stop(); return; }
+  const text=$("input").value.trim(); const img=state.attachment;
+  if(!text && !img) return;
+  if(state.imgMode){ if(!text){ toast("Describe the image you want."); return; } $("input").value=""; autosize(); return generateImage(text); }
+  $("input").value=""; autosize(); clearAttachment(); setBusy(true);
+  let tid;
+  try{ tid=await ensureThread(text); }catch(e){ toast(e.message); setBusy(false); return; }
+  showSection("chat");
+  const userMsg=await saveMsg({ conversation_id:tid, role:"user", content:text, image_url:img });
+  if(state.activeId!==tid){ setBusy(false); return; }
+  state.messages.push(userMsg); renderMessages();
+
+  const ai={ role:"assistant", content:"", conversation_id:tid };
+  const el=document.createElement("div"); el.className="msg-ai thinking";
+  el.innerHTML=`<svg class="logo"><use href="#logo"/></svg><div class="body"><div class="typing"><i></i><i></i><i></i></div></div>`;
+  $("messages").appendChild(el); scrollDown();
+  const body=el.querySelector(".body");
+
+  const history_=state.messages.filter(m=>!m.error && !(m.role==="assistant"&&m.image_url)).map((m,i,arr)=>({ role:m.role, content:m.content, image: i>=arr.length-4 ? m.image_url : null }));
+  state.controller=new AbortController();
+  try{
+    const res=await fetch(API+"/api/public/chat",{ method:"POST", signal:state.controller.signal,
+      headers:{ "Content-Type":"application/json", Authorization:"Bearer "+await token() },
+      body:JSON.stringify({ messages:history_ }) });
+    if(!res.ok){ const j=await res.json().catch(()=>({})); throw new Error(j.error||`Request failed (${res.status})`); }
+    const reader=res.body.getReader(), dec=new TextDecoder();
+    el.classList.remove("thinking");
+    while(true){ const { done, value }=await reader.read(); if(done) break;
+      ai.content+=dec.decode(value,{stream:true}); body.innerHTML=`<div class="md">${md(ai.content)}</div>`; scrollDown(); }
+  }catch(e){
+    el.classList.remove("thinking");
+    if(e.name==="AbortError"){ if(!ai.content){ el.remove(); setBusy(false); return; } }
+    else { ai.error = e.message.includes("Failed to fetch") ? "Can't reach the RoomVAR server. Check BACKEND_URL in the configuration." : e.message; fillAi(body,ai); setBusy(false); return; }
+  }
+  if(ai.content){ const saved=await saveMsg(ai); if(state.activeId===tid) state.messages.push(saved); touchThread(tid); }
+  setBusy(false);
+}
+
+async function generateImage(prompt){
+  showSection("chat"); setBusy(true);
+  let tid; try{ tid=await ensureThread(prompt); }catch(e){ toast(e.message); setBusy(false); return; }
+  const userMsg=await saveMsg({ conversation_id:tid, role:"user", content:"🎨 "+prompt });
+  if(state.activeId!==tid){ setBusy(false); return; }
+  state.messages.push(userMsg); renderMessages();
+  const el=document.createElement("div"); el.className="msg-ai thinking";
+  el.innerHTML=`<svg class="logo"><use href="#logo"/></svg><div class="body"><div class="img-loading">Rendering your space… this can take up to a minute</div></div>`;
+  $("messages").appendChild(el); scrollDown();
+  state.controller=new AbortController();
+  try{
+    const res=await fetch(API+"/api/public/image",{ method:"POST", signal:state.controller.signal,
+      headers:{ "Content-Type":"application/json", Authorization:"Bearer "+await token() }, body:JSON.stringify({ prompt }) });
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok||!j.image) throw new Error(j.error||`Image generation failed (${res.status})`);
+    el.classList.remove("thinking");
+    const ai={ role:"assistant", content:prompt, image_url:j.image, conversation_id:tid };
+    fillAi(el.querySelector(".body"),ai); scrollDown();
+    const saved=await saveMsg(ai); if(state.activeId===tid) state.messages.push(saved);
+    sb.from("gallery").insert({ prompt, image_url:j.image }).then(({error})=>error&&toast("Couldn't save to gallery"));
+    touchThread(tid);
+  }catch(e){
+    el.classList.remove("thinking");
+    if(e.name==="AbortError") el.remove();
+    else fillAi(el.querySelector(".body"),{ error: e.message.includes("Failed to fetch")?"Can't reach the RoomVAR server.":e.message });
+  }
+  setBusy(false);
+}
+
+function stop(){ state.controller?.abort(); }
+function setBusy(b){
+  state.busy=b; const s=$("send");
+  s.innerHTML = b ? `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`;
+  s.title = b ? "Stop" : "Send"; updateSend(); if(!b) $("input").focus();
+}
+function updateSend(){ $("send").disabled = !state.busy && !$("input").value.trim() && !state.attachment; }
+
+/* ---------- Composer ---------- */
+const input=$("input");
+function autosize(){ input.style.height="auto"; input.style.height=Math.min(input.scrollHeight,200)+"px"; updateSend(); }
+input.oninput=autosize;
+input.onkeydown=(e)=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); if(!state.busy) send(); } };
+input.onfocus=()=>$("composer").classList.add("focus");
+input.onblur=()=>$("composer").classList.remove("focus");
+$("send").onclick=send;
+function setImgMode(on){
+  state.imgMode=on; $("imgMode").classList.toggle("on",on); $("box").classList.toggle("img-mode",on);
+  input.placeholder = on ? "Describe the room you want to see…" : "Describe your room or ask anything…";
+  if(on) clearAttachment();
+}
+$("imgMode").onclick=()=>{ setImgMode(!state.imgMode); input.focus(); };
+$("attach").onclick=()=>{ setImgMode(false); $("file").click(); };
+$("file").onchange=async(e)=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  if(!f.type.startsWith("image/")){ toast("Please choose an image file."); return; }
+  try{ state.attachment=await resizeImage(f,1024); }catch{ toast("Couldn't read that image."); return; }
+  $("preview").innerHTML=`<div class="pv"><img src="${state.attachment}" alt="Room photo"><button title="Remove">×</button></div>`;
+  $("preview").classList.remove("hidden"); $("preview").querySelector("button").onclick=clearAttachment;
+  updateSend(); input.focus();
+};
+function clearAttachment(){ state.attachment=null; $("preview").innerHTML=""; $("preview").classList.add("hidden"); updateSend(); }
+function resizeImage(file,max){
+  return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const s=Math.min(1,max/Math.max(img.width,img.height));
+    const c=document.createElement("canvas"); c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); res(c.toDataURL("image/jpeg",.85)); };
+    img.onerror=rej; img.src=URL.createObjectURL(file); });
+}
+
+/* Voice input (browser speech recognition, where supported) */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition; let rec=null;
+$("mic").onclick=()=>{
+  if(!SR){ toast("Voice input isn't supported in this browser."); return; }
+  if(rec){ rec.stop(); return; }
+  rec=new SR(); rec.interimResults=true; rec.lang=navigator.language||"en-US";
+  const base=input.value; $("mic").classList.add("mic-on");
+  rec.onresult=(e)=>{ input.value=(base?base+" ":"")+Array.from(e.results).map(r=>r[0].transcript).join(""); autosize(); };
+  rec.onend=()=>{ rec=null; $("mic").classList.remove("mic-on"); input.focus(); };
+  rec.onerror=(e)=>{ if(e.error!=="aborted") toast("Voice input error: "+e.error); };
+  rec.start();
+};
+
+/* ---------- Suggestions & navigation ---------- */
+$("cards").innerHTML=SUGGESTIONS.map(([k,t],i)=>`<button class="card" data-i="${i}"><span class="k">${k}</span>${esc(t)}</button>`).join("");
+$("cards").onclick=(e)=>{ const c=e.target.closest(".card"); if(!c) return; const [,t,mode]=SUGGESTIONS[c.dataset.i];
+  if(mode==="photo"){ input.value=t; autosize(); $("attach").click(); return; }
+  setImgMode(mode===true); input.value=t; autosize(); send(); };
+$("newChat").onclick=()=>{ setImgMode(false); showWelcome(); closeSidebar(); };
+$("navImage").onclick=()=>{ showWelcome(); setImgMode(true); closeSidebar(); input.focus(); };
+$("navRoom").onclick=()=>{ showWelcome(); setImgMode(false); closeSidebar(); input.value="Here's a photo of my room. Suggest a redesign: "; autosize(); $("file").click(); };
+$("navGallery").onclick=async()=>{ if(state.busy) stop(); state.activeId=null; renderThreads(); showSection("gallery"); $("topTitle").textContent="My gallery"; closeSidebar(); loadGallery(); };
+async function loadGallery(){
+  const g=$("galleryGrid"); g.innerHTML=`<div class="empty">Loading…</div>`;
+  const { data, error } = await sb.from("gallery").select("*").order("created_at",{ascending:false});
+  if(error){ g.innerHTML=`<div class="empty">Couldn't load your gallery.</div>`; return; }
+  if(!data.length){ g.innerHTML=`<div class="empty">No images yet. Use “Create image” to generate your first design.</div>`; return; }
+  g.innerHTML="";
+  for(const it of data){ const d=document.createElement("div"); d.className="g-item";
+    d.innerHTML=`<img src="${it.image_url}" alt="${esc(it.prompt)}" loading="lazy"><div class="meta"><span>${esc(it.prompt)}</span>
+      <button class="icon-btn" data-a="dl" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></svg></button>
+      <button class="icon-btn" data-a="del" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div>`;
+    d.querySelector("img").onclick=()=>lightbox(it.image_url);
+    d.querySelector('[data-a="dl"]').onclick=()=>download(it.image_url);
+    d.querySelector('[data-a="del"]').onclick=async()=>{ if(!confirm("Delete this image from your gallery?")) return;
+      const { error } = await sb.from("gallery").delete().eq("id",it.id); if(error) toast("Delete failed"); else d.remove(); };
+    g.appendChild(d); }
+}
+function closeSidebar(){ document.body.classList.remove("sb-open"); }
+$("menuBtn").onclick=()=>document.body.classList.add("sb-open");
+$("scrim").onclick=closeSidebar;
+
+/* Boot: show sign-in if there is no session */
+sb.auth.getSession().then(({data})=>{ if(!data.session) $("auth").classList.remove("hidden"); });
+})();
+</script>
+</body>
+</html>
